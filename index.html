@@ -2,29 +2,35 @@
 <html lang="pl">
 <head>
   <meta charset="UTF-8">
-  <title>Planner HB – FullCalendar + Firebase</title>
+  <title>Planner HB – FullCalendar</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 0; padding: 0; background: #f8fafc; }
-    header { background: #1a202c; color: white; padding: 1rem; text-align: center; font-size: 1.4rem; }
-    .controls { text-align: center; padding: 1rem; display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
-    .form-container { display: flex; flex-direction: column; align-items: center; padding: 1rem; }
+    body { font-family: sans-serif; margin: 0; padding: 0; }
+    header { background: #1a202c; color: white; padding: 1rem; text-align: center; }
+    .controls, .members { text-align: center; padding: 1rem; }
+    .form-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; padding: 1rem; }
     input, select, button { padding: 0.4rem; }
     #calendar { max-width: 90%; margin: 1rem auto; }
     .fc-daygrid-day.fc-day-sun, .fc-daygrid-day.fc-day-sat { background-color: #fbeaea; }
     .fc-daygrid-day[data-holiday="true"] { background-color: #e0f7fa !important; }
-    .fc-daygrid-day.selected { background-color: #fff4c2 !important; }
   </style>
 </head>
 <body>
-  <header>Planner HB – FullCalendar</header>
+  <header>
+    <h1>Planner HB – FullCalendar</h1>
+  </header>
+
+  <div class="members">
+    <input type="text" id="newMember" placeholder="Dodaj członka">
+    <button onclick="addMember()">Dodaj członka</button>
+    <select id="memberSelect"></select>
+  </div>
 
   <div class="controls">
-    <select id="memberSelect"></select>
     <input type="text" id="taskText" maxlength="50" placeholder="Opis zadania">
     <select id="taskLocation">
       <option value="online">Online</option>
@@ -49,21 +55,33 @@
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+    const holidays = ['2025-01-01', '2025-05-01', '2025-05-03', '2025-08-15', '2025-11-01', '2025-11-11', '2025-12-25', '2025-12-26'];
 
-    const memberSelect = document.getElementById('memberSelect');
     const calendarEl = document.getElementById('calendar');
-    const members = ['Krystian', 'Sebastian', 'Sławek', 'Krzysztof', 'Paweł'];
-    const icons = { online: '🏠', office: '🏢', client: '🚗' };
-    const holidays = ['2025-01-01','2025-05-01','2025-05-03','2025-08-15','2025-11-01','2025-11-11','2025-12-25','2025-12-26'];
+    const memberSelect = document.getElementById('memberSelect');
+    const taskText = document.getElementById('taskText');
 
-    let selectedDate = null;
+    const defaultMembers = ['Krystian', 'Sebastian', 'Sławek', 'Krzysztof', 'Paweł'];
 
-    members.forEach(name => {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name;
-      memberSelect.appendChild(option);
-    });
+    function loadMembers() {
+      db.ref('members').once('value', snapshot => {
+        const members = snapshot.val() || {};
+        memberSelect.innerHTML = '';
+        Object.keys(members).forEach(name => {
+          const option = document.createElement('option');
+          option.value = name;
+          option.textContent = name;
+          memberSelect.appendChild(option);
+        });
+      });
+    }
+
+    function addMember() {
+      const name = document.getElementById('newMember').value.trim();
+      if (!name) return;
+      db.ref('members/' + name).set(true, loadMembers);
+      document.getElementById('newMember').value = '';
+    }
 
     const calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: 'dayGridMonth',
@@ -73,51 +91,58 @@
         right: 'dayGridMonth,timeGridWeek'
       },
       dateClick: function(info) {
-        document.querySelectorAll('.fc-daygrid-day').forEach(el => el.classList.remove('selected'));
-        info.dayEl.classList.add('selected');
-        selectedDate = info.dateStr;
-        document.getElementById('taskText').focus();
+        taskText.focus();
+        taskText.dataset.date = info.dateStr;
       },
       dayCellDidMount: function(info) {
         if (holidays.includes(info.date.toISOString().split('T')[0])) {
           info.el.setAttribute('data-holiday', 'true');
         }
       },
-      events: []
+      eventClick: function(info) {
+        const newTitle = prompt("Edytuj zadanie (usuń – zostaw puste i kliknij OK):", info.event.title);
+        if (newTitle === null) return;
+        if (newTitle.trim() === '') {
+          db.ref('events/' + info.event.id).remove();
+          info.event.remove();
+        } else {
+          db.ref('events/' + info.event.id).update({ title: newTitle });
+          info.event.setProp('title', newTitle);
+        }
+      },
+      events: function(fetchInfo, successCallback) {
+        db.ref('events').once('value', snapshot => {
+          const data = snapshot.val() || {};
+          const events = Object.entries(data).map(([id, val]) => ({ id, ...val }));
+          successCallback(events);
+        });
+      }
     });
-
-    calendar.render();
 
     function addTask() {
       const member = memberSelect.value;
-      const text = document.getElementById('taskText').value.trim();
+      const text = taskText.value.trim();
       const type = document.getElementById('taskLocation').value;
-
-      if (!text || !selectedDate || !member) {
+      const date = taskText.dataset.date;
+      if (!text || !date || !member) {
         alert('Wypełnij wszystkie pola i kliknij datę w kalendarzu.');
         return;
       }
-
+      const icons = { online: '🏠', office: '🏢', client: '🚗' };
+      const newEventRef = db.ref('events').push();
       const event = {
         title: `${icons[type]} ${member}: ${text}`,
-        start: selectedDate,
+        start: date,
         allDay: true
       };
-
-      const newRef = db.ref('tasks').push();
-      newRef.set(event);
-
-      calendar.addEvent(event);
-      document.getElementById('taskText').value = '';
+      newEventRef.set(event);
+      calendar.addEvent({ id: newEventRef.key, ...event });
+      taskText.value = '';
     }
 
-    db.ref('tasks').on('value', snapshot => {
-      const events = snapshot.val();
-      calendar.getEvents().forEach(e => e.remove());
-      for (let key in events) {
-        calendar.addEvent(events[key]);
-      }
-    });
+    loadMembers();
+    defaultMembers.forEach(name => db.ref('members/' + name).set(true));
+    calendar.render();
   </script>
 </body>
 </html>
