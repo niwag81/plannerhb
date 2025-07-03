@@ -17,6 +17,7 @@
     #calendar { max-width: 90%; margin: 1rem auto; }
     .fc-daygrid-day.fc-day-sun, .fc-daygrid-day.fc-day-sat { background-color: #fbeaea; }
     .fc-daygrid-day[data-holiday="true"] { background-color: #e0f7fa !important; }
+    .fc-daygrid-day.selected { outline: 3px solid #facc15 !important; }
   </style>
 </head>
 <body>
@@ -27,6 +28,7 @@
   <div class="members">
     <input type="text" id="newMember" placeholder="Dodaj członka">
     <button onclick="addMember()">Dodaj członka</button>
+    <button onclick="removeMember()">Usuń wybranego</button>
     <select id="memberSelect"></select>
   </div>
 
@@ -55,7 +57,7 @@
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    const holidays = ['2025-01-01', '2025-05-01', '2025-05-03', '2025-08-15', '2025-11-01', '2025-11-11', '2025-12-25', '2025-12-26'];
+    const holidays = ['2025-01-01','2025-05-01','2025-05-03','2025-08-15','2025-11-01','2025-11-11','2025-12-25','2025-12-26'];
 
     const calendarEl = document.getElementById('calendar');
     const memberSelect = document.getElementById('memberSelect');
@@ -83,19 +85,29 @@
       document.getElementById('newMember').value = '';
     }
 
+    function removeMember() {
+      const name = memberSelect.value;
+      if (!name) return;
+      db.ref('members/' + name).remove(loadMembers);
+    }
+
     const calendar = new FullCalendar.Calendar(calendarEl, {
       initialView: 'dayGridMonth',
+      firstDay: 1, // poniedziałek
       headerToolbar: {
         left: 'prev,next today',
         center: 'title',
         right: 'dayGridMonth,timeGridWeek'
       },
       dateClick: function(info) {
+        document.querySelectorAll('.fc-daygrid-day').forEach(el => el.classList.remove('selected'));
+        info.dayEl.classList.add('selected');
         taskText.focus();
         taskText.dataset.date = info.dateStr;
       },
       dayCellDidMount: function(info) {
-        if (holidays.includes(info.date.toISOString().split('T')[0])) {
+        const dateOnly = info.date.toISOString().split('T')[0];
+        if (holidays.includes(dateOnly)) {
           info.el.setAttribute('data-holiday', 'true');
         }
       },
